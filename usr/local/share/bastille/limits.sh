@@ -2,6 +2,7 @@
 # 
 # Copyright (c) 2018-2019, Christer Edwards <christer.edwards@gmail.com>
 # All rights reserved.
+# Ressource limits added by Sven R github.com/hackacad
 # 
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -29,12 +30,17 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 . /usr/local/share/bastille/colors.pre.sh
-. /usr/local/etc/bastille/bastille.conf
 
 usage() {
-    echo -e "${COLOR_RED}Usage: bastille stop TARGET${COLOR_RESET}"
+    echo -e "${COLOR_RED}Usage: bastille limits TARGET option value${COLOR_RESET}"
+    echo -e "Example: bastille limits JAILNAME memoryuse 1G"
     exit 1
 }
+
+RACCT_ENABLE=$(sysctl -n kern.racct.enable)
+if [ "${RACCT_ENABLE}" != '1' ]; then
+    echo "Racct not enabled. Append 'kern.racct.enable=1' to /boot/loader.conf and reboot"
+fi
 
 # Handle special-case commands first.
 case "$1" in
@@ -43,35 +49,26 @@ help|-h|--help)
     ;;
 esac
 
-if [ $# -gt 1 ] || [ $# -lt 1 ]; then
+if [ $# -lt 2 ]; then
     usage
 fi
 
 TARGET="${1}"
+OPTION="${2}"
+VALUE="${3}"
 shift
 
 if [ "${TARGET}" = 'ALL' ]; then
     JAILS=$(jls name)
 fi
+
 if [ "${TARGET}" != 'ALL' ]; then
-    JAILS=$(jls name | awk "/^${TARGET}$/")
+    JAILS=$(jls name | grep -w "${TARGET}")
 fi
 
 for _jail in ${JAILS}; do
-    ## test if not running
-    if [ ! "$(jls name | awk "/^${_jail}$/")" ]; then
-        echo -e "${COLOR_RED}[${_jail}]: Not started.${COLOR_RESET}"
-
-    ## test if running
-    elif [ "$(jls name | awk "/^${_jail}$/")" ]; then
-        ## remove ip4.addr from firewall table:jails
-        if [ ! -z "${bastille_jail_loopback}" ]; then
-            pfctl -q -t jails -T delete $(jls -j ${_jail} ip4.addr)
-        fi
-
-        ## stop container
-        echo -e "${COLOR_GREEN}[${_jail}]:${COLOR_RESET}"
-        jail -f "${bastille_jailsdir}/${_jail}/jail.conf" -r ${_jail}
-    fi
-    echo
+    echo -e "${COLOR_GREEN}[${_jail}]:${COLOR_RESET}"
+    echo -e "${TYPE} ${VALUE}"
+     rctl -a jail:${_jail}:${OPTION}:deny=${VALUE}/jail
+    echo -e "${COLOR_RESET}"
 done
